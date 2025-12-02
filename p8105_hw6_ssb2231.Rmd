@@ -1,0 +1,54 @@
+---
+title: "P8105 Homework 6"
+author: "Satya Batna"
+output: 
+  github_document:
+    toc: true
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 7,
+  fig.height = 5,
+  out.width = "80%"
+)
+
+library(tidyverse)
+library(broom)
+library(purrr)
+library(modelr)
+```
+
+#Problem 1
+```{r problem1-load}
+homicide_raw = read_csv("data/homicide-data.csv")
+```
+ 
+```{r problem1-clean}
+homicide_df =
+  homicide_raw |>
+  mutate(
+    city_state = str_c(city, state, sep = ", "),
+    
+      resolved = case_when(
+      disposition == "Closed by arrest" ~ 1,
+      TRUE ~ 0
+    ),
+    resolved = factor(resolved),
+    
+    victim_race = str_to_lower(victim_race),
+        victim_age = as.numeric(victim_age)
+  ) |>
+  filter(
+    !city_state %in% c("Dallas, TX",
+                       "Phoenix, AZ",
+                       "Kansas City, MO",
+                       "Tulsa, AL")
+  ) |>
+  filter(victim_race %in% c("white", "black"))
+
+homicide_df
+```
+
