@@ -52,3 +52,68 @@ homicide_df =
 homicide_df
 ```
 
+```{r problem1-baltimore-fit}
+# Filter to Baltimore only
+baltimore_df =
+  homicide_df |>
+  filter(city_state == "Baltimore, MD")
+
+# Logistic regression: resolved vs unresolved
+baltimore_fit =
+  glm(
+    resolved ~ victim_age + victim_sex + victim_race,
+    data = baltimore_df,
+    family = binomial()
+  )
+
+summary(baltimore_fit)
+
+baltimore_tidy =
+  tidy(baltimore_fit, conf.int = TRUE, exponentiate = TRUE)
+
+baltimore_tidy
+```
+
+
+```{r problem1-all-cities}
+city_or =
+  homicide_df |>
+  nest(data = -city_state) |>
+  mutate(
+    fit = map(
+      data,
+      ~ glm(
+          resolved ~ victim_age + victim_sex + victim_race,
+          data = .x,
+          family = binomial()
+        )
+    ),
+    results = map(
+      fit,
+      ~ tidy(.x, conf.int = TRUE, exponentiate = TRUE)
+    )
+  ) |>
+  select(city_state, results) |>
+  unnest(results) |>
+  filter(term == "victim_sexMale") |>
+  select(city_state, estimate, conf.low, conf.high)
+
+city_or
+
+# reorder cities by OR
+city_or_plot =
+  city_or |>
+  mutate(city_state = forcats::fct_reorder(city_state, estimate))
+
+# make the plot
+city_or_plot |>
+  ggplot(aes(x = estimate, y = city_state)) +
+  geom_point() +
+  geom_errorbar(aes(xmin = conf.low, xmax = conf.high)) +
+  geom_vline(xintercept = 1, linetype = "dashed") +
+  labs(
+    x = "Adjusted odds ratio (Male vs Female)",
+    y = "City",
+    title = "OR for homicide being solved (Male vs Female victims) by city"
+  )
+```
