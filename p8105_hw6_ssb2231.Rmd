@@ -5,7 +5,7 @@ output:
   github_document:
     toc: true
 ---
-```{r setup, include=FALSE}
+```{r, message= FALSE}
 knitr::opts_chunk$set(
   echo = TRUE,
   warning = FALSE,
@@ -20,15 +20,14 @@ library(broom)
 library(purrr)
 library(modelr)
 library(p8105.datasets)
+library(janitor)
 
 ```
 
-#Problem 1
-```{r problem1-load}
+**Problem 1**
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
 homicide_raw = read_csv("data/homicide-data.csv")
-```
- 
-```{r problem1-clean}
+
 homicide_df =
   homicide_raw |>
   mutate(
@@ -54,7 +53,7 @@ homicide_df =
 homicide_df
 ```
 
-```{r problem1-baltimore-fit}
+```{r,  echo=FALSE, message=FALSE, warning=FALSE}
 # Filter to Baltimore only
 baltimore_df =
   homicide_df |>
@@ -77,7 +76,7 @@ baltimore_tidy
 ```
 
 
-```{r problem1-all-cities}
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
 city_or =
   homicide_df |>
   nest(data = -city_state) |>
@@ -122,8 +121,9 @@ city_or_plot |>
 The Washington Post articles discussed how half of murders going unsolved in the US. In this analysis, we see that most cities show adjusted odds ratios below 1, indicating that homicides with male victims are less likely to be solved than those with female victims after adjusting for age and race. Cities such as Baltimore show particularly low odds of resolving cases involving male victims, which are consistent with the findings of the article. Overall, these results suggest significant sex-based disparities in justice outcomes across U.S. cities.
 
 
+**Problem 2**
 
-```{r}
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
 
 # Load data
 data("weather_df")
@@ -163,7 +163,7 @@ boot_results |>
     y = "Count"
   )
 
-# Plot beta1*beta2 distribution
+# Plot beta1*beta2 
 boot_results |>
   ggplot(aes(x = beta1_beta2)) +
   geom_histogram(bins = 30) +
@@ -192,3 +192,142 @@ ci_r2
 ci_beta
 
 ```
+
+
+Using 5000 bootstrap samples, I found that the model predicting maximum temperature using minimum temperature and precipitation consistently performed very well. The distribution of the r-squared values was centered around 0.94, meaning the model explains about 94% of the variation in maximum temperature. The 95% confidence interval for r^2 was narrow (0.934 to 0.947), showing that this estimate is very stable and would likely be similar if new samples were collected.
+
+I also looked at the product of the two regression coefficients (beta1 and beta2), which helps us understand how the combined effects of minimum temperature and precipitation relate to maximum temperature. The bootstrap distribution for this statistic was around -0.006, and the 95% confidence interval (–0.00823 to –0.00371) was entirely negative. This suggests that higher precipitation slightly reduces the positive relationship between minimum and maximum temperature. 
+
+**Problem 3**
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+birth_raw = read_csv("data/birthweight.csv")
+
+birth_df =
+  birth_raw |>
+  clean_names() |>
+  mutate(
+    babysex = factor(babysex, levels = c(1, 2),
+                     labels = c("male", "female")),
+    malform = factor(malform, levels = c(0, 1),
+                     labels = c("absent", "present")),
+    mrace = factor(mrace),
+    frace = factor(frace)
+  ) |>
+  drop_na()
+
+# check missingness 
+birth_df |>
+  summarize(across(everything(), ~ sum(is.na(.))))
+
+# Proposed model for birthweight
+
+mod_prop =
+  lm(
+    bwt ~ babysex + bhead + blength + gaweeks +
+      ppbmi + wtgain + smoken + momage + mrace,
+    data = birth_df
+  )
+
+summary(mod_prop)
+
+# Residuals vs fitted plot
+
+birth_aug =
+  birth_df |>
+  add_predictions(mod_prop) |>
+  add_residuals(mod_prop)
+
+birth_aug |>
+  ggplot(aes(x = pred, y = resid)) +
+  geom_point(alpha = 0.3) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(
+    x = "Fitted birthweight (grams)",
+    y = "Residuals",
+    title = "Residuals vs fitted values: proposed birthweight model"
+  )
+
+
+# Model A: length + gestational age (main effects only)
+mod_A = lm(bwt ~ blength + gaweeks, data = birth_df)
+
+# Model B: Full model
+mod_B = lm(bwt ~ babysex * bhead * blength, data = birth_df)
+
+#Cross-validation
+
+set.seed(123)
+
+cv_df =
+  crossv_mc(birth_df, n = 100, test = 0.2)
+
+cv_res =
+  cv_df |>
+  mutate(
+    train = map(train, as_tibble),
+    test  = map(test,  as_tibble),
+
+    fit_prop = map(train, ~ lm(
+      bwt ~ babysex + bhead + blength + gaweeks +
+        ppbmi + wtgain + smoken + momage + mrace,
+      data = .x
+    )),
+    fit_A = map(train, ~ lm(
+      bwt ~ blength + gaweeks,
+      data = .x
+    )),
+    fit_B = map(train, ~ lm(
+      bwt ~ babysex * bhead * blength,
+      data = .x
+    )),
+
+    rmse_prop = map2_dbl(fit_prop, test, ~ rmse(.x, .y)),
+    rmse_A    = map2_dbl(fit_A,    test, ~ rmse(.x, .y)),
+    rmse_B    = map2_dbl(fit_B,    test, ~ rmse(.x, .y))
+  )
+
+# RMSE
+rmse_long =
+  cv_res |>
+  select(starts_with("rmse_")) |>
+  pivot_longer(
+    everything(),
+    names_to = "model",
+    values_to = "rmse"
+  ) |>
+  mutate(model = recode(
+    model,
+    rmse_prop = "Proposed model",
+    rmse_A    = "Model A: length + gaweeks",
+    rmse_B    = "Model B: sex*head*length"
+  ))
+
+# summary table of prediction error
+rmse_summary =
+  rmse_long |>
+  group_by(model) |>
+  summarize(
+    mean_rmse = mean(rmse),
+    sd_rmse   = sd(rmse),
+    .groups = "drop"
+  )
+
+rmse_summary
+
+# Boxplot of RMSE by model
+rmse_long |>
+  ggplot(aes(x = model, y = rmse)) +
+  geom_boxplot() +
+  coord_flip() +
+  labs(
+    x = "Model",
+    y = "RMSE (cross-validated)",
+    title = "Cross-validated prediction error across birthweight models"
+  )
+```
+
+
+I chose predictors based on what is known to influence birthweight in real life, such as the baby’s size at birth, how long the pregnancy lasted, the mother’s weight and weight gain during pregnancy, smoking, age, and race. When I checked the residuals from this model, they were mostly centered around zero (and were normal distributions) suggesting that the model fits the data. 
+
+Then I compared this model to two simpler models using cross-validated prediction error. One basic model used only birth length and gestational age, and another used head circumference, length, sex, and all the interactions. The simpler models did not predict birthweight as well as our chosen model, and the proposed model had the lowest prediction error. This means that including important maternal health and behavior factors helps improve how accurately we can predict birthweight, and therefore our model does a better job of capturing what influences a baby’s size at birth.
